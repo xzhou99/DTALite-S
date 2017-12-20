@@ -229,6 +229,8 @@ public:
 	{
 		zone_id = 0;
 		accessible_node_count = 0;
+		bOriginNode_ForAgents = false;
+		m_OriginNodeSeqNo = -1;
 	}
 
 	int accessible_node_count;
@@ -238,6 +240,9 @@ public:
 	int zone_id;
 	double x;
 	double y;
+
+	bool bOriginNode_ForAgents;
+	int m_OriginNodeSeqNo;
 
 	std::vector<CLink> m_outgoing_node_vector;
 	
@@ -298,6 +303,8 @@ public:
 	float PCE_factor;  // passenger car equivalent : bus = 3
 	float path_cost; 
 	std::vector<int> path_link_seq_no_vector;
+	int m_path_link_seq_no_vector_size;
+
 	std::vector<int> path_node_seq_no_vector;
 
 	int m_current_link_seq_no;
@@ -307,6 +314,10 @@ public:
 	//above are simulated 
 
 	bool m_bCompleteTrip;
+	bool operator<(const CAgent &other) const
+	{
+		return departure_time_in_min < other.departure_time_in_simulation_interval;
+	}
 
 	void AllocateMemory()
 	{
@@ -316,6 +327,7 @@ public:
 		m_Veh_LinkArrivalTime = new int[path_link_seq_no_vector.size()];
 		m_Veh_LinkDepartureTime = new int[path_link_seq_no_vector.size()];
 
+		m_path_link_seq_no_vector_size = path_link_seq_no_vector.size();
 		departure_time_in_simulation_interval = int(departure_time_in_min*60.0 / g_number_of_seconds_per_interval+0.5);
 
 		if (path_link_seq_no_vector.size() > 0)
@@ -354,6 +366,19 @@ public:
 	}
 };
 
+class CAgentElement
+{
+public:
+	CAgentElement()
+	{
+		pAgent = NULL;
+		bActive = true;
+	}
+
+
+	CAgent* pAgent;
+	bool bActive;
+};
 
 vector<CAgent> g_agent_vector;
 
@@ -584,6 +609,11 @@ void g_ReadInputData()
 		}
 		cout << "number of agents = " << g_agent_vector.size() << endl;
 
+		cout << " Sort agents... " << endl;
+		std::sort(g_agent_vector.begin(), g_agent_vector.end());
+		cout << " Sorting ends. ..." << endl;
+
+
 		g_number_of_simulation_intervals = (300)*60/g_number_of_seconds_per_interval;
 		parser_agent.CloseCSVFile();
 
@@ -622,6 +652,7 @@ public:
 	float* m_link_cost_array; // link cost 
 
 
+	int m_private_origin_seq_no;
 	std::vector<int>  m_agent_vector; // assigned agents for computing 
 	std::vector<int>  m_node_vector; // assigned nodes for computing 
 	std::vector<CNode2NodeAccessibility>  m_node2node_accessibility_vector;
@@ -630,6 +661,7 @@ public:
 	NetworkForSP()
 	{
 		pFileAgentPathLog = NULL;
+		m_private_origin_seq_no = -1;
 	
 	}
 
@@ -859,6 +891,11 @@ public:
 		for (int l = 0; l < g_number_of_links; l++)
 			m_link_volume_array[l] = 0;
 			
+		// perform shortest path calculation
+
+		int return_value = optimal_label_correcting(m_private_origin_seq_no,-1, 0);
+
+	
 		// step 1: find shortest path if needed 
 		for (int i = 0; i < m_agent_vector.size(); i++)
 		{
@@ -882,10 +919,7 @@ public:
 			p_agent->path_link_seq_no_vector.clear();  // reset;
 			p_agent->path_node_seq_no_vector.clear();  // reset;
 
-			if(p_agent->agent_id%100==0)
-			cout << "Finding SP for agent" << p_agent->agent_id << endl;
 
-			int return_value = optimal_label_correcting(g_internal_node_seq_no_map [ p_agent->origin_node_id], g_internal_node_seq_no_map[p_agent->destination_node_id], p_agent->departure_time_in_min);
 			//step 3 find the destination node
 
 
@@ -941,7 +975,7 @@ public:
 
 		CAgent* p_agent = &(g_agent_vector[m_agent_vector[i]]);
 
-		for (int l = 0; l < p_agent->path_link_seq_no_vector.size(); l++)  // for each link in the path of this agent
+		for (int l = 0; l < p_agent->m_path_link_seq_no_vector_size; l++)  // for each link in the path of this agent
 		{
 			int link_seq_no = p_agent->path_link_seq_no_vector[l];
 			m_link_volume_array[link_seq_no] += p_agent->PCE_factor;
@@ -984,83 +1018,123 @@ void g_TrafficSimulation()
 		p_agent->AllocateMemory();
 	}
 
+	list<CAgentElement> g_agent_pointer_list;  // ready to active, and still in the network
+	int current_active_agent_id = 0;
 
-	for (int t = 0; t < g_number_of_simulation_intervals; t++)
+
+	int number_of_threads = omp_get_max_threads();
+
+	for (int t = 0; t < g_number_of_simulation_intervals; t++)  // first loop for time t
 	{
-		if(t%10==0)
-		cout << "simulation time = " << t/10 << "min" << endl;
+		if(t%50==0)
+		cout << "simulation time = " << t/10 << " min, with " << g_agent_pointer_list.size() << " agents" << endl;
 
-		for (int a = 0; a < g_agent_vector.size(); a++)
-		{
-			CAgent* p_agent = &(g_agent_vector[a]);
+		if (t % 10 == 0)
+		{ 
 
-			if (p_agent->departure_time_in_simulation_interval >= t)
-				p_agent->m_bGenereated = true;
-		}
-//#pragma omp parallel for 
-
-		for (int a = 0; a < g_agent_vector.size(); a++)
-		{
-			CAgent* p_agent = &(g_agent_vector[a]);
-			
-			if (p_agent->m_bGenereated == true &&
-				p_agent->m_bCompleteTrip==false && p_agent->m_current_link_seq_no < p_agent->path_link_seq_no_vector.size())
+#pragma omp parallel for 
+			for (int a = current_active_agent_id; a < g_agent_vector.size(); a++)
 			{
-				if (p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no] == t)  // ready to move to the next link
+				CAgent* p_agent = &(g_agent_vector[a]);
+				if (t<=p_agent->departure_time_in_simulation_interval && p_agent->departure_time_in_simulation_interval < t+10)  // PER MIN
+				{ 
+					p_agent->m_bGenereated = true;
+
+					CAgentElement element;
+					element.pAgent = p_agent;
+					element.bActive = true;
+
+					g_agent_pointer_list.push_back(element);
+
+					current_active_agent_id = a;
+				}
+				else  // late departure time
 				{
-					// check if the current link has sufficient capacity 
-					int link_seq_no = p_agent->path_link_seq_no_vector[p_agent->m_current_link_seq_no];
-
-					if (g_link_vector[link_seq_no].m_LinkOutFlowCapacity[t] >= 1)
-					{
-						if (p_agent->m_current_link_seq_no == p_agent->path_link_seq_no_vector.size() - 1)
-						{// end of path
-
-							p_agent->m_bCompleteTrip = true;
-							g_link_vector[link_seq_no].m_LinkCumulativeDeparture[t] += 1;
-
-						}else
-						{ // not complete the trip
-
-						int next_link_seq_no = p_agent->path_link_seq_no_vector[p_agent->m_current_link_seq_no+1];
-
-						p_agent->m_Veh_LinkArrivalTime[p_agent->m_current_link_seq_no + 1] = t;
-
-						p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no + 1] = t + g_link_vector[next_link_seq_no].free_flow_travel_time_in_simu_interval;
-
-						g_link_vector[link_seq_no].m_LinkCumulativeDeparture[t] += 1;
-						g_link_vector[next_link_seq_no].m_LinkCumulativeArrival[t] += 1;
-
-						}
-						
-						//move
-						p_agent->m_current_link_seq_no += 1;
-						g_link_vector[link_seq_no].m_LinkOutFlowCapacity[t] -= 1;
-
-
-					}
-					else
-					{
-						p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no] = t + 1;
-					}
-
+					break;
 				}
 			}
+
 		}
 
+		
+#pragma omp parallel for 
+		for (int ProcessID = 0; ProcessID < number_of_threads; ProcessID++)  // virutal loop for different processors
+		{
 
+		for (auto it = g_agent_pointer_list.begin(); it != g_agent_pointer_list.end(); ++it) // second loop for a
+			{
+				CAgent* p_agent = (*it).pAgent;
+
+				if (p_agent->m_bGenereated == true &&
+					p_agent->m_bCompleteTrip == false && 
+					p_agent->m_current_link_seq_no%number_of_threads == ProcessID && 
+					p_agent->m_current_link_seq_no < p_agent->m_path_link_seq_no_vector_size
+					)
+				{
+					if (p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no] == t)  // ready to move to the next link
+					{
+						// check if the current link has sufficient capacity 
+						int link_seq_no = p_agent->path_link_seq_no_vector[p_agent->m_current_link_seq_no];
+
+						if (g_link_vector[link_seq_no].m_LinkOutFlowCapacity[t] >= 1)
+						{
+							if (p_agent->m_current_link_seq_no == p_agent->path_link_seq_no_vector.size() - 1)
+							{// end of path
+
+								p_agent->m_bCompleteTrip = true;
+								(*it).bActive = false;  // mark inactive element in the queue
+								g_link_vector[link_seq_no].m_LinkCumulativeDeparture[t] += 1;
+
+							}
+							else
+							{ // not complete the trip
+
+								int next_link_seq_no = p_agent->path_link_seq_no_vector[p_agent->m_current_link_seq_no + 1];
+
+								p_agent->m_Veh_LinkArrivalTime[p_agent->m_current_link_seq_no + 1] = t;
+
+								p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no + 1] = t + g_link_vector[next_link_seq_no].free_flow_travel_time_in_simu_interval;
+
+								//g_link_vector[link_seq_no].m_LinkCumulativeDeparture[t] += 1;
+								//g_link_vector[next_link_seq_no].m_LinkCumulativeArrival[t] += 1;
+
+							}
+
+							//move
+							p_agent->m_current_link_seq_no += 1;
+
+							g_link_vector[link_seq_no].m_LinkOutFlowCapacity[t] -= 1;
+
+
+						}
+						else
+						{
+							p_agent->m_Veh_LinkDepartureTime[p_agent->m_current_link_seq_no] = t + 1;
+						}
+
+					}
+				}
+			}
+
+		}
+
+		// clean up list 
+
+		for (auto i = g_agent_pointer_list.begin(); i != g_agent_pointer_list.end();)
+		{
+			if ((*i).bActive == false)
+				i = g_agent_pointer_list.erase(i);
+			else
+				++i;
+		}
 	}
 
 }
 
-void g_TrafficAssignmentSimulationProcess()
+
+void g_AssignThreadsBasedonCPUCores()
 {
 
-	// definte timestamps
-	clock_t start_t, end_t, total_t;
-	int i;
-
-	start_t = clock();
 	int number_of_threads = max(1, g_number_of_CPU_threads());
 
 	number_of_threads = g_number_of_threads;  // step 2: obtain number of  threads for computing 
@@ -1079,7 +1153,76 @@ void g_TrafficAssignmentSimulationProcess()
 		int thread_no = a%number_of_threads;  //devide the agent number by total number of threads 
 		pNetworkForSP[thread_no].m_agent_vector.push_back(a);
 	}
+}
 
+int g_AssignThreadsBasedonOriginNodes()
+{
+
+	// simulation
+	for (int a = 0; a < g_agent_vector.size(); a++)
+	{
+		CAgent* p_agent = &(g_agent_vector[a]);
+
+		int internal_origin_node_seq_no = g_internal_node_seq_no_map[p_agent->origin_node_id];  // map external node number to internal node seq no. 
+		g_node_vector[internal_origin_node_seq_no].bOriginNode_ForAgents = true;
+
+	}
+
+	int number_of_origin_nodes = 0;
+	for (int i = 0; i < g_node_vector.size(); i++)  
+	{
+		if (g_node_vector[i].bOriginNode_ForAgents == true)
+		{
+			g_node_vector[i].m_OriginNodeSeqNo = number_of_origin_nodes;
+			number_of_origin_nodes++;
+		}
+
+	}
+
+	int number_of_threads = number_of_origin_nodes;
+	pNetworkForSP = new NetworkForSP[number_of_threads]; // create n copies of network, each for a subset of agents to use 
+
+	cout << " number of threads = " << number_of_threads << endl;
+	for (int i = 0; i < number_of_threads; i++)
+	{
+		pNetworkForSP[i].m_threadNo = i;   // each thread/network has its own thread number. // each network has its own label cost vector for shortest path calculation
+		pNetworkForSP[i].AllocateMemory(g_number_of_nodes, g_number_of_links);
+	}
+	cout << " end of network memory allocation. " << endl;
+
+	number_of_origin_nodes = 0;
+	for (int i = 0; i < g_node_vector.size(); i++)
+	{
+		if (g_node_vector[i].bOriginNode_ForAgents == true)
+		{
+			pNetworkForSP[number_of_origin_nodes].m_private_origin_seq_no = g_node_vector[i].node_seq_no;
+
+			number_of_origin_nodes++;
+		}
+
+	}
+
+	for (int a = 0; a < g_agent_vector.size(); a++)  //assign all agents to the corresponding thread
+	{
+		CAgent* p_agent = &(g_agent_vector[a]);
+
+		int internal_origin_node_seq_no = g_internal_node_seq_no_map[p_agent->origin_node_id];  // map external node number to internal node seq no. 
+
+		int thread_no = g_node_vector[internal_origin_node_seq_no].m_OriginNodeSeqNo;
+		pNetworkForSP[thread_no].m_agent_vector.push_back(a);
+	}
+	return number_of_threads;
+}
+void g_TrafficAssignmentSimulationProcess()
+{
+
+	// definte timestamps
+	clock_t start_t, end_t, total_t;
+	int i;
+
+	start_t = clock();
+
+	int number_of_threads = g_AssignThreadsBasedonOriginNodes();
 
 	for (int assignment_iteration_no = 0; assignment_iteration_no < 1; assignment_iteration_no++)
 	{
@@ -1119,8 +1262,8 @@ void g_TrafficAssignmentSimulationProcess()
 
 				g_link_vector[l].flow_volume += pNetworkForSP[ProcessID].m_link_volume_array[l];  // aggregate volume from all threads
 
-				fprintf(g_pFileDebugLog, "\iteration = %d,processor = %d, link no= %d, volume = %f, total volume = %f\n",
-					assignment_iteration_no, ProcessID, l, pNetworkForSP[ProcessID].m_link_volume_array[l], g_link_vector[l].flow_volume);
+				//fprintf(g_pFileDebugLog, "\iteration = %d,processor = %d, link no= %d, volume = %f, total volume = %f\n",
+				//	assignment_iteration_no, ProcessID, l, pNetworkForSP[ProcessID].m_link_volume_array[l], g_link_vector[l].flow_volume);
 
 			}
 		}
