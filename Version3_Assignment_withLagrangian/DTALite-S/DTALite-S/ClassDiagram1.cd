@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ClassDiagram MajorVersion="1" MinorVersion="1">
+  <Class Name="CLink">
+    <Position X="2.75" Y="0.5" Width="2.25" />
+    <TypeIdentifier>
+      <HashCode>AAgAAEAAABAAAAIAAUABAABAABAxBADAAAAAAAAAAEA=</HashCode>
+      <FileName>AgentPlus.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNode">
+    <Position X="5.25" Y="0.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>ACAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAABoEAABAAI=</HashCode>
+      <FileName>AgentPlus.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CAgent">
+    <Position X="0.5" Y="0.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>QgAAAAAAAAAASAAAAAACAAAAAAAIAAAAAAAQAAgAQAA=</HashCode>
+      <FileName>AgentPlus.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="CNode2NodeAccessibility">
+    <Position X="7.75" Y="0.5" Width="2" />
+    <TypeIdentifier>
+      <HashCode>AAAAAAAAAAAAAgAAAAAAAQAAAAAQAAAAAAAAAAAAAAA=</HashCode>
+      <FileName>AgentPlus.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Class Name="
+         
+">
+    <Position X="7.75" Y="2.25" Width="4.25" />
+    <TypeIdentifier>
+      <HashCode>QAAgICAEgBhAEAggQABgAACEACQAAAAAAAAAQAAMAgA=</HashCode>
+      <FileName>AgentPlus.cpp</FileName>
+    </TypeIdentifier>
+  </Class>
+  <Font Name="Segoe UI" Size="9" />
+</ClassDiagram>
