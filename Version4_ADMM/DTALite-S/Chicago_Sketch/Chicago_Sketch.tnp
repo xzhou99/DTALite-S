@@ -1,0 +1,25 @@
+This project include node.csv and link.csv.
+[coordinate_info]
+long_lat_flag=0
+origin_on_bottom_flag=1.00000
+mile_as_unit_of_length=1
+right_hand_traffic_flag=1.00000
+[microsimulation_data]
+file_name=
+[GPS_data]
+file_name=
+[GUI]
+node_display_size=10.000000
+node_text_display_ratio=4.00000
+load_movement_data=1
+[Version]
+1.0=50.000000
+[background_image_coordinate_info]
+left=24.950000
+bottom=38.850000
+right=79.074628
+top=81.524525
+width=1.00000
+[movement]
+prohibit_non_specified_movement_on_freeway_and_ramp=1.00000
+hide_non_specified_movement_on_freeway_and_ramp=1.00000
